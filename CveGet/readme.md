@@ -7,7 +7,7 @@
 
 
 1. 根据关键字进行搜素!
-
+![image](https://github.com/NX10086/CveGet/blob/master/CveGet/CveGet/image/search.png)
 2. 根据每个CVE的summary进行人工筛选选择要留下的CVE进行接受
 
 3. 最终会生成以keyword进行命名的json格式文件（位置在程序根目录）
