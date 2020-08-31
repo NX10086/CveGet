@@ -3,6 +3,7 @@ package com.cve;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.JSONReader;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -26,13 +27,13 @@ public class CVE
 {
 
 
+    private MyDialog dialog ;
 
+    public void start(){
+        dialog = new MyDialog();
+        final  String  PATH =  System.getProperty("user.dir");
 
-
-    public static void main( String[] args ) throws IOException {
-
-
-        JFrame main = new JFrame("根据关键字搜索CVE");
+        final JFrame main = new JFrame("根据关键字搜索CVE");
         main.setSize(400,300);
         Toolkit toolkit = Toolkit.getDefaultToolkit();
         int x = (int)(toolkit.getScreenSize().getWidth()-main.getWidth())/2;
@@ -50,7 +51,7 @@ public class CVE
 
         JLabel label =new JLabel();
         label.setSize(80,40);
-        label.setText("key word :");
+        label.setText("Keyword :");
         label.setFont(new Font("宋体",1,13));
         label.setLocation(30,80);
 
@@ -59,57 +60,120 @@ public class CVE
         field.setFont(new Font("宋体",1,13));
         field.setLocation(120,80);
 
-        JButton button = new JButton("Search");
-        button.setSize(100,40);
-        button.setFont(new Font("宋体",1,13));
-        button.setLocation(140,150);
+        JButton search = new JButton("Search");
+        search.setSize(100,40);
+        search.setFont(new Font("宋体",1,13));
+        search.setLocation(80,150);
 
+        final JButton mark = new JButton("Mark");
+        mark.setSize(100,40);
+        mark.setFont(new Font("宋体",1,13));
+        mark.setLocation(210,150);
+        JButton conMark =new JButton("Continue");
+        conMark.setFont(new Font("宋体",1,13));
+        conMark.setBounds(80,200,100,40);
         panel.add(label);
         panel.add(field);
-        panel.add(button);
+        panel.add(search);
+        panel.add(mark);
+        panel.add(conMark);
+
         main.setLayout(null);
         main.add(panel);
         main.setResizable(false);
         main.setVisible( true);
 
-        button.addActionListener(new ActionListener() {
+        search.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                String NVD_API="https://services.nvd.nist.gov/rest/json/cve/1.0/";
-                String absurl="https://nvd.nist.gov";
-                String form_type="Basic";       // 1.Basic     2.Advanced
-                String results_type="overview"; // 1.overview  2. Statistics
-                String query=field.getText();                // 关键字查询
-                String queryType="";            //如需完全匹配，令为&queryType=phrase
-                String search_type="all";       //
+                Thread thread = new Thread(){
+                    @Override
+                    public void run() {
+                        String NVD_API="https://services.nvd.nist.gov/rest/json/cves/1.0?";
+                        String keyword=field.getText();                // 关键字查询
+                        int startIndex =0;
+                        int totalResults=0;
+                        int step=50;
+                        int endIndex;
+                        int  resultsPerPage=step;
+                        String cur_request_url= NVD_API+"keyword="+keyword
+                                +"&resultsPerPage="+resultsPerPage
+                                +"&startIndex="+startIndex;
 
-                String cur_page_url= "https://nvd.nist.gov/vuln/search/results?form_type="+form_type+
+                        try {
+                            boolean f= FileUtil.del(PATH+"/lastSearchResult");
+                            System.out.println(f);
+                        } catch (IOException ex) {
+                            ex.printStackTrace();
+                        }
+                        boolean append=false;
+                        JOptionPane.showMessageDialog(null, "请等待搜索结果", "提示", JOptionPane.INFORMATION_MESSAGE);
+                        mark.setEnabled(false);
+                        do {
+                            String str=get_json(cur_request_url);
+                            System.out.println(str);
+                            JSONObject object = JSONObject.parseObject(str);
+                            totalResults = object.getInteger("totalResults");
+                            try {
+                                String format_json = JSON.toJSONString(object, SerializerFeature.PrettyFormat, SerializerFeature.WriteMapNullValue,
+                                        SerializerFeature.WriteDateUseDateFormat);
+                                if(startIndex+step<totalResults){
+                                    endIndex=startIndex+step;
+                                }else {
+                                    endIndex=totalResults;
+                                }
+                                writeFile(PATH+"/lastSearchResult"+"/lastSearchResult-"+startIndex+"-"+(endIndex-1)+".json",format_json,append);
+                            } catch (IOException ex) {
+                                ex.printStackTrace();
+                            }
+                            startIndex=startIndex+step;
+                            cur_request_url=NVD_API+"keyword="+keyword
+                                    +"&resultsPerPage="+resultsPerPage
+                                    +"&startIndex="+startIndex;
 
-                        "&results_type="+results_type+
-                        "&query="+query+queryType+
-                        "&search_type="+search_type;
-                System.out.println(cur_page_url);
-                List<Cvelink> cvelinks=new ArrayList<>();
-                get_all_cve_link(cvelinks,absurl,cur_page_url);//取得全部搜索结果CVE_ID
+                        }while (startIndex<totalResults);
+                        JOptionPane.showMessageDialog(null, "搜索完成，请开始标记", "提示", JOptionPane.INFORMATION_MESSAGE);
+                        mark.setEnabled(true);
+                    }
+                };
+                thread.start();
 
-                List<JSONObject>  jsonObjects=new ArrayList<>();
-                get_cve_json_list(cvelinks,NVD_API,jsonObjects);//根据CVE_ID取得全部CVE_JSON列表
-                System.out.println(jsonObjects.toString());
-                try {
-                    String  path =  System.getProperty("user.dir");
-                    output(jsonObjects,query,path);
-                } catch (IOException ex) {
-                    ex.printStackTrace();
-                }
             }
         });
 
+        mark.addActionListener(new ActionListener() {
 
+            JSONObject object=null;
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                dialog.firstMarkInitial(main,PATH+"/lastSearchResult",field.getText());
+            }
+        });
+        conMark.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+
+                LogInfo info = FileUtil.readLog(PATH+"/log.json");
+                int allCurrentIndex=info.currentIndex+info.getPageCount()*info.getResultsPerPage();
+                if(allCurrentIndex==info.getTotalResults()){//上次已经全部标记完，
+                    JOptionPane.showMessageDialog(null, "上次以全部标记完成，点击search搜索新的关键字，或点击mark开始新的标记", "提示", JOptionPane.INFORMATION_MESSAGE);
+                }else if(allCurrentIndex<info.getTotalResults()){//传入info
+                    dialog.continueMarkInitial(main,info);
+                }
+            }
+        });
+    }
+    public static void main( String[] args ) throws IOException {
+
+       CVE cve = new CVE();
+       cve.start();
 
     }
+
     public static void get_cve_json_list(List<Cvelink> cvelinks,String NVD_API,List<JSONObject> jsonObjects){
         for (Cvelink cve:cvelinks){
             String cve_detial_link=NVD_API+cve.getCve_id();
+            System.out.println(cve_detial_link);
             JSONObject object = JSONObject.parseObject(get_json(cve_detial_link));
             JSONObject result = object.getJSONObject("result");
             JSONArray cve_items=result.getJSONArray("CVE_Items");
@@ -119,15 +183,15 @@ public class CVE
             //System.out.println(cve_json.toJSONString());
         }
     }
-    public static void output(List<JSONObject> jsonObjects,String project_name,String path) throws IOException {
+    public static void output(List<JSONObject> jsonObjects,String keyword,String time,String path) throws IOException {
         JSONArray array = JSONObject.parseArray(jsonObjects.toString());
         JSONObject result =new JSONObject();
-        result.put(project_name,array);
+        result.put(keyword,array);
         String format_json = JSON.toJSONString(result, SerializerFeature.PrettyFormat, SerializerFeature.WriteMapNullValue,
                 SerializerFeature.WriteDateUseDateFormat);
 
 
-        writeFile(path+"/"+project_name+".json",format_json);
+        writeFile(path+"/"+keyword+time+".json",format_json,true);
     }
     public static String get_next_page_url(String cur_page_url,String absurl){
         String next_page_url="";
@@ -182,15 +246,7 @@ public class CVE
                 cvelink.setSummary(cve_summary);
 
                 MyDialog dialog = new MyDialog();
-                int res=dialog.showDialog(null,cve_summary,"是否接受"+cve_id+"?");
-                if(res==1){
 
-                    cvelinks.add(cvelink); //点击“是”后留下该cve
-                    System.out.println("接受");
-                }else{
-                       //点击“否”后过滤该cve
-                    System.out.println("拒绝");
-                }
 
 
 
@@ -206,7 +262,14 @@ public class CVE
                     .userAgent("Mozilla/5.0 (Windows NT 6.1; rv:30.0) Gecko/20100101 Firefox/30.0")
                     .ignoreContentType(true)
                     .get();
-            json_str=document.body().text();
+
+            String str=document.body().toString();
+
+            str=str.replaceAll("<!--","");
+            str=str.replaceAll("-->","");
+            Document doc =Jsoup.parse(str);
+            json_str=doc.body().text();
+
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -218,9 +281,9 @@ public class CVE
      * @param sets
      * @throws IOException
      */
-    public static void writeFile(String filePath, String sets)
+    public static void writeFile(String filePath, String sets,boolean append)
             throws IOException {
-        FileWriter fw = new FileWriter(filePath);
+        FileWriter fw = new FileWriter(filePath,append);
         PrintWriter out = new PrintWriter(fw);
         out.write(sets);
         out.println();
@@ -233,7 +296,7 @@ public class CVE
      * @param path
      * @return
      */
-    public static Object ReadFile(String path) {
+    public static String ReadFile(String path) {
         File file = new File(path);
         BufferedReader reader = null;
         String laststr = "";
@@ -254,7 +317,7 @@ public class CVE
                 }
             }
         }
-        return JSON.parse(laststr);
+        return laststr;
     }
 
 }
